@@ -22,13 +22,9 @@ jobs:
           git config --global pull.rebase true
           git config --global rebase.autoStash true
           git config --global fetch.prune true
-      - name: Install dependencies
-        # due to how chocolatey works, only cmd.exe is supported here
-        shell: cmd
-        run: |
-          choco install vulkan-sdk
-          call refreshenv
-          echo %PATH% >> %GITHUB_PATH%
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: .\.ci\scripts\windows\install-vulkan-sdk.ps1
       - name: Merge PR
         uses: actions/github-script@v6
         with: 
