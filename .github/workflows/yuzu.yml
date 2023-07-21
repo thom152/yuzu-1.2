@@ -52,7 +52,7 @@ jobs:
         env:
           CC: cl.exe
           CXX: cl.exe
-          CXXFLAGS: "/Gw /GA /Gr /Ob2"
+          CXXFLAGS: "/Gw"
         run: |
           glslangValidator --version
           git submodule update --init --recursive
