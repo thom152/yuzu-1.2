@@ -1,0 +1,30 @@
+diff --git a/.ci/scripts/windows/upload.ps1 b/.ci/scripts/windows/upload.ps1
+index 492763420..59492af30 100644
+--- a/.ci/scripts/windows/upload.ps1
++++ b/.ci/scripts/windows/upload.ps1
+@@ -36,9 +36,9 @@ if (Test-Path -Path ".\build\bin\Release") {
+ git submodule foreach git clean -fxd
+ 
+ # Upload debugging symbols
+-mkdir pdb
+-Get-ChildItem "$BUILD_DIR\" -Recurse -Filter "*.pdb" | Copy-Item -destination .\pdb
+-7z a -tzip $MSVC_BUILD_PDB .\pdb\*.pdb
++# mkdir pdb
++# Get-ChildItem "$BUILD_DIR\" -Recurse -Filter "*.pdb" | Copy-Item -destination .\pdb
++# 7z a -tzip $MSVC_BUILD_PDB .\pdb\*.pdb
+ rm "$BUILD_DIR\*.pdb"
+ 
+ # Create artifact directories
+@@ -49,9 +49,9 @@ mkdir "artifacts"
+ $CURRENT_DIR = Convert-Path .
+ 
+ # Build a tar.xz for the source of the release
+-git clone --depth 1 file://$CURRENT_DIR $MSVC_SOURCE
+-7z a -r -ttar $MSVC_SOURCE_TAR $MSVC_SOURCE
+-7z a -r -txz $MSVC_SOURCE_TARXZ $MSVC_SOURCE_TAR
++# git clone --depth 1 file://$CURRENT_DIR $MSVC_SOURCE
++# 7z a -r -ttar $MSVC_SOURCE_TAR $MSVC_SOURCE
++# 7z a -r -txz $MSVC_SOURCE_TARXZ $MSVC_SOURCE_TAR
+ 
+ # Following section is quick hack to package artifacts differently for GitHub Actions
+ if ("$env:GITHUB_ACTIONS" -eq "true") {

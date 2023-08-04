@@ -1,0 +1,278 @@
+diff --git a/src/video_core/buffer_cache/buffer_cache.h b/src/video_core/buffer_cache/buffer_cache.h
+index f0f450edb..eb8725aab 100644
+--- a/src/video_core/buffer_cache/buffer_cache.h
++++ b/src/video_core/buffer_cache/buffer_cache.h
+@@ -7,8 +7,10 @@
+ #include <memory>
+ #include <numeric>
+ 
++#include "core/core.h"
++#include "core/core_timing.h"
+ #include "video_core/buffer_cache/buffer_cache_base.h"
+-
++// #pragma optimize("", off)
+ namespace VideoCommon {
+ 
+ using Core::Memory::YUZU_PAGESIZE;
+@@ -234,10 +236,9 @@ bool BufferCache<P>::DMACopy(GPUVAddr src_address, GPUVAddr dest_address, u64 am
+     if (has_new_downloads) {
+         memory_tracker.MarkRegionAsGpuModified(*cpu_dest_address, amount);
+     }
+-
+-    Core::Memory::CpuGuestMemoryScoped<u8, Core::Memory::GuestMemoryFlags::UnsafeReadWrite> tmp(
+-        cpu_memory, *cpu_src_address, amount, &tmp_buffer);
+-    tmp.SetAddressAndSize(*cpu_dest_address, amount);
++    tmp_buffer.resize_destructive(amount);
++    cpu_memory.ReadBlockUnsafe(*cpu_src_address, tmp_buffer.data(), amount);
++    cpu_memory.WriteBlockUnsafe(*cpu_dest_address, tmp_buffer.data(), amount);
+     return true;
+ }
+ 
+@@ -312,6 +313,21 @@ void BufferCache<P>::BindGraphicsUniformBuffer(size_t stage, u32 index, GPUVAddr
+     channel_state->uniform_buffers[stage][index] = binding;
+ }
+ 
++template <class P>
++void BufferCache<P>::TrackCBBuffer(GPUVAddr addr, size_t size) {
++    if constexpr (!IS_OPENGL) {
++        auto cpu_addr = *gpu_memory->GpuToCpuAddress(addr);
++        BufferId buffer_id{};
++        do {
++            channel_state->has_deleted_buffers = false;
++            buffer_id = FindBuffer(cpu_addr, static_cast<u32>(size));
++        } while (channel_state->has_deleted_buffers);
++        auto& buffer = slot_buffers[buffer_id];
++        buffer.SetCBWritten(true);
++        buffer.InvalidateCB(buffer.Offset(cpu_addr), static_cast<u32>(size));
++    }
++}
++
+ template <class P>
+ void BufferCache<P>::DisableGraphicsUniformBuffer(size_t stage, u32 index) {
+     channel_state->uniform_buffers[stage][index] = NULL_BINDING;
+@@ -442,11 +458,6 @@ void BufferCache<P>::UnbindComputeStorageBuffers() {
+ template <class P>
+ void BufferCache<P>::BindComputeStorageBuffer(size_t ssbo_index, u32 cbuf_index, u32 cbuf_offset,
+                                               bool is_written) {
+-    if (ssbo_index >= channel_state->compute_storage_buffers.size()) [[unlikely]] {
+-        LOG_ERROR(HW_GPU, "Storage buffer index {} exceeds maximum storage buffer count",
+-                  ssbo_index);
+-        return;
+-    }
+     channel_state->enabled_compute_storage_buffers |= 1U << ssbo_index;
+     channel_state->written_compute_storage_buffers |= (is_written ? 1U : 0U) << ssbo_index;
+ 
+@@ -469,11 +480,6 @@ void BufferCache<P>::UnbindComputeTextureBuffers() {
+ template <class P>
+ void BufferCache<P>::BindComputeTextureBuffer(size_t tbo_index, GPUVAddr gpu_addr, u32 size,
+                                               PixelFormat format, bool is_written, bool is_image) {
+-    if (tbo_index >= channel_state->compute_texture_buffers.size()) [[unlikely]] {
+-        LOG_ERROR(HW_GPU, "Texture buffer index {} exceeds maximum texture buffer count",
+-                  tbo_index);
+-        return;
+-    }
+     channel_state->enabled_compute_texture_buffers |= 1U << tbo_index;
+     channel_state->written_compute_texture_buffers |= (is_written ? 1U : 0U) << tbo_index;
+     if constexpr (SEPARATE_IMAGE_BUFFERS_BINDINGS) {
+@@ -820,6 +826,7 @@ void BufferCache<P>::BindHostGraphicsUniformBuffers(size_t stage) {
+     });
+ }
+ 
++#pragma warning(disable : 4102)
+ template <class P>
+ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32 binding_index,
+                                                    bool needs_bind) {
+@@ -828,9 +835,37 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32
+     const u32 size = std::min(binding.size, (*channel_state->uniform_buffer_sizes)[stage][index]);
+     Buffer& buffer = slot_buffers[binding.buffer_id];
+     TouchBuffer(buffer, binding.buffer_id);
+-    const bool use_fast_buffer = binding.buffer_id != NULL_BUFFER_ID &&
+-                                 size <= channel_state->uniform_buffer_skip_cache_size &&
+-                                 !memory_tracker.IsRegionGpuModified(cpu_addr, size);
++    bool use_fast_buffer = [&]() {
++        if constexpr (IS_OPENGL) {
++            return binding.buffer_id != NULL_BUFFER_ID &&
++                   size <= channel_state->uniform_buffer_skip_cache_size &&
++                   !memory_tracker.IsRegionGpuModified(cpu_addr, size);
++        } else {
++            return binding.buffer_id != NULL_BUFFER_ID &&
++                   (buffer.IsCBWritten() || buffer.use_fast_path) &&
++                   !memory_tracker.IsRegionGpuModified(cpu_addr, size);
++        }
++    }();
++
++    if constexpr (!IS_OPENGL) {
++        if (use_fast_buffer && !buffer.IsCBWritten()) {
++            //auto ts_ms = cpu_memory.system.CoreTiming().GetGlobalTimeMs();
++            //u64 sync_total{};
++            //for (auto& sync : buffer.sync_stats) {
++            //    if (ts_ms - sync.last_ts_ms <=
++            //        std::chrono::milliseconds(buffer.sync_stats.size())) {
++            //        sync_total += sync.total_size;
++            //    } else {
++            //        sync.total_size = 0;
++            //    }
++            //}
++            if (buffer.write_frame_tick != frame_tick || buffer.write_count < 2) {
++                buffer.use_fast_path = false;
++            }
++        }
++        use_fast_buffer = buffer.IsCBWritten() || buffer.use_fast_path;
++    }
++
+     if (use_fast_buffer) {
+         if constexpr (IS_OPENGL) {
+             if (runtime.HasFastBufferSubData()) {
+@@ -846,50 +881,66 @@ void BufferCache<P>::BindHostGraphicsUniformBuffer(size_t stage, u32 index, u32
+                 }
+                 const auto span = ImmediateBufferWithData(cpu_addr, size);
+                 runtime.PushFastUniformBuffer(stage, binding_index, span);
+-                return;
++            } else {
++                channel_state->fast_bound_uniform_buffers[stage] |= 1U << binding_index;
++                channel_state->uniform_buffer_binding_sizes[stage][binding_index] = size;
++                // Stream buffer path to avoid stalling on non-Nvidia drivers or Vulkan
++                auto span = runtime.BindMappedUniformBuffer(stage, binding_index, size);
++                cpu_memory.ReadBlockUnsafe(cpu_addr, span.data(), size);
++            }
++        } else {
++            auto buffer_offset = buffer.Offset(cpu_addr);
++            if (buffer.GetSchedulerSequence() != runtime.GetSchedulerSequence()) {
++                buffer.InvalidateCBWriteSequence();
++            }
++            auto& range = buffer.GetCBRange(buffer_offset, size);
++            if (!range.stream_allocated) {
++                range = buffer.CreateCBRange(buffer_offset, size, runtime.GetSchedulerSequence());
++                auto staging = runtime.UploadStagingBuffer(range.size);
++                buffer.SetCBStagingOffset(buffer_offset, staging.buffer,
++                                          static_cast<u32>(staging.offset));
++
++                auto range_offsets = buffer.GetCBOffsets(buffer_offset);
++                auto ptr = cpu_memory.GetPointer(range_offsets.first);
++                std::memcpy(staging.mapped_span.data(), ptr, range.size);
+             }
++            auto range_offsets = buffer.GetCBOffsets(buffer_offset);
++            runtime.BindMappedUniformBuffer(range.stream_handle, range_offsets.second, size);
+         }
+-        if constexpr (IS_OPENGL) {
+-            channel_state->fast_bound_uniform_buffers[stage] |= 1U << binding_index;
+-            channel_state->uniform_buffer_binding_sizes[stage][binding_index] = size;
++    } else {
++        // Classic cached path
++        const bool sync_cached = SynchronizeBuffer(buffer, cpu_addr, size);
++        if (sync_cached) {
++            ++channel_state->uniform_cache_hits[0];
+         }
+-        // Stream buffer path to avoid stalling on non-Nvidia drivers or Vulkan
+-        const std::span<u8> span = runtime.BindMappedUniformBuffer(stage, binding_index, size);
+-        cpu_memory.ReadBlockUnsafe(cpu_addr, span.data(), size);
+-        return;
+-    }
+-    // Classic cached path
+-    const bool sync_cached = SynchronizeBuffer(buffer, cpu_addr, size);
+-    if (sync_cached) {
+-        ++channel_state->uniform_cache_hits[0];
+-    }
+-    ++channel_state->uniform_cache_shots[0];
++        ++channel_state->uniform_cache_shots[0];
+ 
+-    // Skip binding if it's not needed and if the bound buffer is not the fast version
+-    // This exists to avoid instances where the fast buffer is bound and a GPU write happens
+-    needs_bind |= HasFastUniformBufferBound(stage, binding_index);
+-    if constexpr (HAS_PERSISTENT_UNIFORM_BUFFER_BINDINGS) {
+-        needs_bind |= channel_state->uniform_buffer_binding_sizes[stage][binding_index] != size;
+-    }
+-    if (!needs_bind) {
+-        return;
+-    }
+-    const u32 offset = buffer.Offset(cpu_addr);
+-    if constexpr (IS_OPENGL) {
+-        // Fast buffer will be unbound
+-        channel_state->fast_bound_uniform_buffers[stage] &= ~(1U << binding_index);
++        // Skip binding if it's not needed and if the bound buffer is not the fast version
++        // This exists to avoid instances where the fast buffer is bound and a GPU write happens
++        needs_bind |= HasFastUniformBufferBound(stage, binding_index);
++        if constexpr (HAS_PERSISTENT_UNIFORM_BUFFER_BINDINGS) {
++            needs_bind |= channel_state->uniform_buffer_binding_sizes[stage][binding_index] != size;
++        }
++        if (!needs_bind) {
++            return;
++        }
++        const u32 offset = buffer.Offset(cpu_addr);
++        if constexpr (IS_OPENGL) {
++            // Fast buffer will be unbound
++            channel_state->fast_bound_uniform_buffers[stage] &= ~(1U << binding_index);
+ 
+-        // Mark the index as dirty if offset doesn't match
+-        const bool is_copy_bind = offset != 0 && !runtime.SupportsNonZeroUniformOffset();
+-        channel_state->dirty_uniform_buffers[stage] |= (is_copy_bind ? 1U : 0U) << index;
+-    }
+-    if constexpr (HAS_PERSISTENT_UNIFORM_BUFFER_BINDINGS) {
+-        channel_state->uniform_buffer_binding_sizes[stage][binding_index] = size;
+-    }
+-    if constexpr (NEEDS_BIND_UNIFORM_INDEX) {
+-        runtime.BindUniformBuffer(stage, binding_index, buffer, offset, size);
+-    } else {
+-        runtime.BindUniformBuffer(buffer, offset, size);
++            // Mark the index as dirty if offset doesn't match
++            const bool is_copy_bind = offset != 0 && !runtime.SupportsNonZeroUniformOffset();
++            channel_state->dirty_uniform_buffers[stage] |= (is_copy_bind ? 1U : 0U) << index;
++        }
++        if constexpr (HAS_PERSISTENT_UNIFORM_BUFFER_BINDINGS) {
++            channel_state->uniform_buffer_binding_sizes[stage][binding_index] = size;
++        }
++        if constexpr (NEEDS_BIND_UNIFORM_INDEX) {
++            runtime.BindUniformBuffer(stage, binding_index, buffer, offset, size);
++        } else {
++            runtime.BindUniformBuffer(buffer, offset, size);
++        }
+     }
+ }
+ 
+@@ -1473,9 +1524,46 @@ bool BufferCache<P>::SynchronizeBufferImpl(Buffer& buffer, VAddr cpu_addr, u32 s
+         total_size_bytes += range_size;
+         largest_copy = std::max(largest_copy, range_size);
+     });
++
++    if constexpr (!IS_OPENGL) {
++        if (buffer.write_frame_tick != frame_tick) {
++            buffer.write_count = 0;
++        }
++        buffer.write_frame_tick = frame_tick;
++        buffer.write_count++;
++        buffer.use_fast_path = true;
++        //auto ts_ms = cpu_memory.system.CoreTiming().GetGlobalTimeMs();
++        //bool taken{false};
++        //if (ts_ms - buffer.sync_stats[buffer.sync_index].last_ts_ms <
++        //    std::chrono::milliseconds(buffer.sync_stats.size())) {
++        //    if (buffer.sync_stats[buffer.sync_index].total_size < buffer.SizeBytes() / 2) {
++        //        buffer.sync_stats[buffer.sync_index].total_size += total_size_bytes;
++        //        buffer.sync_stats[buffer.sync_index].last_ts_ms = ts_ms;
++        //        taken = true;
++        //    }
++        //} else if (total_size_bytes) {
++        //    buffer.sync_index = (buffer.sync_index + 1) % buffer.sync_stats.size();
++        //    buffer.sync_stats[buffer.sync_index].last_ts_ms = ts_ms;
++        //    buffer.sync_stats[buffer.sync_index].total_size = total_size_bytes;
++        //    taken = true;
++        //}
++
++        //if (taken) {
++        //    u64 sync_total{};
++        //    for (auto& sync : buffer.sync_stats) {
++        //        sync_total += sync.total_size;
++        //    }
++        //    if (sync_total > buffer.SizeBytes() / 2) {
++        //        //LOG_ERROR(HW_GPU, "Setting buffer 0x{:X} to use fats path", buffer.CpuAddr());
++        //        buffer.use_fast_path = true;
++        //    }
++        //}
++    }
++
+     if (total_size_bytes == 0) {
+         return true;
+     }
++    buffer.total_copy_size += total_size_bytes;
+     const std::span<BufferCopy> copies_span(copies.data(), copies.size());
+     UploadMemory(buffer, total_size_bytes, largest_copy, copies_span);
+     return false;
