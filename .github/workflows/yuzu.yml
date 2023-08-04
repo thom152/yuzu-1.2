@@ -58,36 +58,39 @@ jobs:
           git submodule update --init --recursive
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_POLICY_DEFAULT_CMP0069=NEW -DYUZU_ENABLE_LTO=ON -DYUZU_USE_BUNDLED_QT=1 -DYUZU_USE_BUNDLED_SDL2=1 -DYUZU_USE_QT_WEB_ENGINE=ON -DENABLE_COMPATIBILITY_LIST_DOWNLOAD=ON -DYUZU_ENABLE_COMPATIBILITY_REPORTING=OFF -DYUZU_TESTS=OFF -DUSE_DISCORD_PRESENCE=ON -DENABLE_QT_TRANSLATION=ON -DDISPLAY_VERSION="early-access" -DCMAKE_BUILD_TYPE=Release -DYUZU_CRASH_DUMPS=ON ..
+          cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_POLICY_DEFAULT_CMP0069=NEW -DYUZU_ENABLE_LTO=ON -DYUZU_USE_BUNDLED_QT=1 -DYUZU_USE_BUNDLED_SDL2=1 -DYUZU_USE_QT_WEB_ENGINE=OFF -DENABLE_COMPATIBILITY_LIST_DOWNLOAD=OFF -DYUZU_ENABLE_COMPATIBILITY_REPORTING=OFF -DYUZU_TESTS=OFF -DUSE_DISCORD_PRESENCE=OFF -DENABLE_QT_TRANSLATION=ON -DDISPLAY_VERSION="early-access" -DCMAKE_BUILD_TYPE=Release -DYUZU_CRASH_DUMPS=ON -DENABLE_CUBEB=OFF -DENABLE_LIBUSB=OFF -DENABLE_WEB_SERVICE=OFF -DYUZU_ROOM=OFF ..
       - name: Build
         run: msbuild "build/yuzu.sln" /m /p:Configuration=Release
-
       - name: Pack
         shell: pwsh
         run: .\.ci\scripts\windows\upload.ps1
-      - name: Upload
-        uses: actions/upload-artifact@v3
-        with:
-          name: windows
-          path: artifacts/
-      - name: Upload EXE
-        uses: actions/upload-artifact@v3
-        with:
-          name: windows(only exe)
-          path: artifacts/yuzu.exe
-
+      # - name: Upload
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: windows
+      #     path: artifacts/
+      # - name: Upload EXE
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: windows(only exe)
+      #     path: artifacts/yuzu.exe
       - name: Pack 7z
         shell: cmd
         run:
           7z a -m0=lzma2 -mx=9 -ms=on yuzu-windows.7z artifacts/*
-      - name: Create release
-        uses: ncipollo/release-action@v1
+      - name: Upload 7z
+        uses: actions/upload-artifact@v3
         with:
-          artifacts: "yuzu-windows.7z,artifacts/yuzu.exe"
-          name: "${{ env.time }}"
-          body: "${{ env.body }}"
-          tag: "release"
-          allowUpdates: true
-          artifactErrorsFailBuild: false
-          prerelease: false
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: yuzu-windows.7z
+          path: yuzu-windows.7z
+      # - name: Create release
+      #   uses: ncipollo/release-action@v1
+      #   with:
+      #     artifacts: "yuzu-windows.7z,artifacts/yuzu.exe"
+      #     name: "${{ env.time }}"
+      #     body: "${{ env.body }}"
+      #     tag: "release"
+      #     allowUpdates: true
+      #     artifactErrorsFailBuild: false
+      #     prerelease: false
+      #     token: ${{ secrets.GITHUB_TOKEN }}
