@@ -11,13 +11,18 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v3
+        name: Checkout yuzu
         with:
           repository: yuzu-emu/yuzu
+          fetch-depth: 0
+      - uses: actions/checkout@v3
+        name: Checkout patches
+        with:
+          path: 'patches'
           fetch-depth: 0
       - name: Do the patching
         shell: pwsh
         run: |
-          ls
           git status
-          git apply .\patches\cmakelists.patch
+          git apply .\patches\patches\cmakelists.patch
           git status
