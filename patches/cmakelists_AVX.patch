@@ -1,0 +1,14 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index af9f394f1..79beec7a8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -286,6 +286,9 @@ endif()
+ add_definitions(-DBOOST_ASIO_DISABLE_CONCEPTS)
+ if (MSVC)
+     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/std:c++20>)
++    add_compile_options(/arch:AVX)
++    add_compile_options(/Ot)
++    add_compile_options(/fp:fast)
+ 
+     # boost still makes use of deprecated result_of.
+     add_definitions(-D_HAS_DEPRECATED_RESULT_OF)
