@@ -15,6 +15,7 @@ on:
         - AVX
         - AVX2
         - AVX512
+        - none
       yuzu_use_qt_web_engine:
         description: 'YUZU_USE_QT_WEB_ENGINE'
         required: true
@@ -50,6 +51,11 @@ on:
         required: true
         default: false
         type: boolean
+      shadowFlickerPatch:
+        description: 'SHADOWFLICKERPATCH'
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   build-msvc:
@@ -65,6 +71,7 @@ jobs:
           ENABLE_WEB_SERVICE: ${{ inputs.enable_web_service }}
           YUZU_ROOM: ${{ inputs.yuzu_room }}
           YUZU_CRASH_DUMPS: ${{ inputs.yuzu_crash_dumps }}
+          SHADOWFLICKERPATCH: ${{ inputs.shadowFlickerPatch }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -97,7 +104,9 @@ jobs:
           git apply .\patches\patches\gdbstub.patch
           git apply .\patches\patches\screenshots.patch
           git apply .\patches\patches\upload.patch
-          git apply .\patches\patches\shadowFlicker.patch
+          if ("$env:SHADOWFLICKERPATCH" -eq "true") {
+              git apply .\patches\patches\shadowFlicker.patch
+          }
       - name: Configure git
         run: |
           git config --global user.email "yuzu@yuzu-emu.org"
@@ -141,7 +150,7 @@ jobs:
           git submodule update --init --recursive
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_POLICY_DEFAULT_CMP0069=NEW -DYUZU_ENABLE_LTO=ON -DYUZU_USE_BUNDLED_QT=1 -DYUZU_USE_BUNDLED_SDL2=1 -DYUZU_USE_QT_WEB_ENGINE=$env:YUZU_USE_QT_WEB_ENGINE -DENABLE_COMPATIBILITY_LIST_DOWNLOAD=ON -DYUZU_ENABLE_COMPATIBILITY_REPORTING=OFF -DYUZU_TESTS=OFF -DUSE_DISCORD_PRESENCE=$env:USE_DISCORD_PRESENCE -DENABLE_QT_TRANSLATION=ON -DDISPLAY_VERSION="early-access" -DCMAKE_BUILD_TYPE=Release -DYUZU_CRASH_DUMPS=$env:YUZU_CRASH_DUMPS -DENABLE_CUBEB=$env:ENABLE_CUBEB -DENABLE_LIBUSB=$env:ENABLE_LIBUSB -DENABLE_WEB_SERVICE=$env:ENABLE_WEB_SERVICE -DYUZU_ROOM=$env:YUZU_ROOM ..
+          cmake -G "Visual Studio 17 2022" -A x64 -DCMAKE_POLICY_DEFAULT_CMP0069=NEW -DYUZU_ENABLE_LTO=ON -DYUZU_USE_BUNDLED_QT=1 -DYUZU_USE_BUNDLED_SDL2=1 -DYUZU_USE_QT_WEB_ENGINE="$env:YUZU_USE_QT_WEB_ENGINE" -DENABLE_COMPATIBILITY_LIST_DOWNLOAD=ON -DYUZU_ENABLE_COMPATIBILITY_REPORTING=OFF -DYUZU_TESTS=OFF -DUSE_DISCORD_PRESENCE="$env:USE_DISCORD_PRESENCE" -DENABLE_QT_TRANSLATION=ON -DDISPLAY_VERSION="early-access" -DCMAKE_BUILD_TYPE=Release -DYUZU_CRASH_DUMPS="$env:YUZU_CRASH_DUMPS" -DENABLE_CUBEB="$env:ENABLE_CUBEB" -DENABLE_LIBUSB="$env:ENABLE_LIBUSB" -DENABLE_WEB_SERVICE="$env:ENABLE_WEB_SERVICE" -DYUZU_ROOM="$env:YUZU_ROOM" ..
       - name: Build
         run: msbuild "build/yuzu.sln" /m /p:Configuration=Release
       - name: Pack
