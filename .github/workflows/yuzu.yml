@@ -101,16 +101,16 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+      - name: Configure git
+        run: |
+          git config --global user.email "yuzu@yuzu-emu.org"
+          git config --global user.name "yuzubot"
       - name: Merge PRs
         shell: pwsh
         run: |
           pip3 install requests urllib3
           python .ci/scripts/merge/apply-patches-by-label.py "mainline-merge" "mainline-merge"
           python .ci/scripts/merge/apply-patches-by-label.py "early-access-merge" "early-access-merge"
-      - name: Configure git
-        run: |
-          git config --global user.email "yuzu@yuzu-emu.org"
-          git config --global user.name "yuzubot"
       - name: Install Vulkan SDK
         shell: pwsh
         run: .\.ci\scripts\windows\install-vulkan-sdk.ps1
