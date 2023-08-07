@@ -4,8 +4,8 @@ run-name: 'Build yuzu'
 on:
   workflow_dispatch:
     inputs:
-      optimizationFlag:
-        description: 'optimizationFlag'
+      optimization_flag:
+        description: 'OPTIMIZATION_FLAG'
         required: true
         default: 'AVX2'
         type: choice
@@ -57,7 +57,7 @@ jobs:
 
     runs-on: windows-2022
     env:
-          OPTIMIZATIONFLAG: ${{ inputs.optimizationFlag }}
+          OPTIMIZATION_FLAG: ${{ inputs.optimization_flag }}
           YUZU_USE_QT_WEB_ENGINE: ${{ inputs.yuzu_use_qt_web_engine }}
           USE_DISCORD_PRESENCE: ${{ inputs.use_discord_presence }}
           ENABLE_CUBEB: ${{ inputs.enable_cubeb }}
@@ -76,28 +76,28 @@ jobs:
         uses: actions/checkout@v3
         with:
           path: 'patches'
-          fetch-depth: 0
       - name: Apply patches
         shell: pwsh
         run: |
-          if ("$env:OPTIMIZATIONFLAG" -eq "SSE") {
+          if ("$env:OPTIMIZATION_FLAG" -eq "SSE") {
               git apply .\patches\patches\cmakelists_SSE.patch
           }
-          if ("$env:OPTIMIZATIONFLAG" -eq "SSE2") {
+          if ("$env:OPTIMIZATION_FLAG" -eq "SSE2") {
               git apply .\patches\patches\cmakelists_SSE2.patch
           }
-          if ("$env:OPTIMIZATIONFLAG" -eq "AVX") {
+          if ("$env:OPTIMIZATION_FLAG" -eq "AVX") {
               git apply .\patches\patches\cmakelists_AVX.patch
           }
-          if ("$env:OPTIMIZATIONFLAG" -eq "AVX2") {
+          if ("$env:OPTIMIZATION_FLAG" -eq "AVX2") {
               git apply .\patches\patches\cmakelists_AVX2.patch
           }
-          if ("$env:OPTIMIZATIONFLAG" -eq "AVX512") {
+          if ("$env:OPTIMIZATION_FLAG" -eq "AVX512") {
               git apply .\patches\patches\cmakelists_AVX512.patch
           }
           git apply .\patches\patches\gdbstub.patch
           git apply .\patches\patches\screenshots.patch
           git apply .\patches\patches\upload.patch
+          git apply .\patches\patches\shadowFlicker.patch
       - name: Configure git
         run: |
           git config --global user.email "yuzu@yuzu-emu.org"
@@ -108,7 +108,7 @@ jobs:
       - name: Install Vulkan SDK
         shell: pwsh
         run: .\.ci\scripts\windows\install-vulkan-sdk.ps1
-      - name: Merge PR
+      - name: Merge PRs
         uses: actions/github-script@v6
         with: 
           script: |
@@ -166,14 +166,14 @@ jobs:
         with:
           name: yuzu-windows.7z
           path: yuzu-windows.7z
-      # - name: Create release
-      #   uses: ncipollo/release-action@v1
-      #   with:
-      #     artifacts: "yuzu-windows.7z,artifacts/yuzu.exe"
-      #     name: "${{ env.time }}"
-      #     body: "${{ env.body }}"
-      #     tag: "release"
-      #     allowUpdates: true
-      #     artifactErrorsFailBuild: false
-      #     prerelease: false
-      #     token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "yuzu-windows.7z"
+          name: "${{ env.time }}"
+          body: "${{ env.body }}"
+          tag: "release"
+          allowUpdates: true
+          artifactErrorsFailBuild: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
